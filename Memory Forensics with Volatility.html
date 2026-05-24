@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <title>CTF: Memory Forensics with Volatility | Memory Dump Analysis</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Segoe UI', 'Fira Code', 'Consolas', system-ui, monospace;
+    }
+    body {
+      background: linear-gradient(160deg, #000a15 0%, #001525 50%, #000a15 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      margin: 0;
+    }
+    .container {
+      max-width: 1200px;
+      width: 100%;
+      background: rgba(5, 15, 30, 0.95);
+      backdrop-filter: blur(28px);
+      border: 1px solid rgba(255, 200, 50, 0.4);
+      box-shadow: 0 25px 50px rgba(255, 180, 0, 0.2);
+      border-radius: 2.5rem;
+      padding: 2rem;
+      color: #d0d8e8;
+      transition: all 0.3s ease;
+    }
+    h1 {
+      font-size: 2.2rem;
+      font-weight: 700;
+      text-align: center;
+      background: linear-gradient(135deg, #ffcc44, #cc8800);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.4rem;
+      letter-spacing: 1px;
+    }
+    .subtitle {
+      text-align: center;
+      color: #b0a880;
+      margin-bottom: 1.8rem;
+      border-bottom: 1px dashed #4a4020;
+      padding-bottom: 1rem;
+      font-style: italic;
+    }
+    .panel {
+      background: rgba(5, 12, 25, 0.9);
+      backdrop-filter: blur(12px);
+      border-radius: 1.8rem;
+      padding: 1.7rem;
+      border: 1px solid #4a4020;
+      margin-bottom: 1.8rem;
+    }
+    .hidden {
+      display: none !important;
+    }
+    .flex-row {
+      display: flex;
+      gap: 1.2rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    input, button {
+      background: #0a1525;
+      border: 1px solid #5a4a30;
+      border-radius: 2rem;
+      padding: 0.7rem 1.3rem;
+      color: #e8dcc0;
+      font-weight: 500;
+      outline: none;
+      transition: 0.2s;
+      font-size: 0.9rem;
+    }
+    input:focus {
+      border-color: #ffcc44;
+      box-shadow: 0 0 14px #cc8800;
+    }
+    button {
+      background: #251a10;
+      border-color: #aa8833;
+      cursor: pointer;
+      font-weight: bold;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    button:hover {
+      background: #352820;
+      border-color: #ddbb55;
+      box-shadow: 0 0 18px #cc9900;
+    }
+    .task-card {
+      background: #080f1a;
+      border-left: 6px solid #ffcc44;
+      padding: 1.2rem;
+      border-radius: 1.3rem;
+      margin: 1.2rem 0;
+      animation: fadeIn 0.35s ease;
+    }
+    @keyframes fadeIn {
+      0% { opacity: 0; transform: translateY(8px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+    .terminal {
+      background: #000510;
+      border: 2px solid #00cc44;
+      border-radius: 1rem;
+      padding: 1rem;
+      margin: 1rem 0;
+      font-family: 'Fira Code', 'Consolas', monospace;
+      font-size: 0.78rem;
+      color: #00cc44;
+      min-height: 200px;
+      max-height: 450px;
+      overflow-y: auto;
+      box-shadow: 0 0 25px rgba(0, 204, 68, 0.2);
+    }
+    .terminal .prompt {
+      color: #00cc44;
+    }
+    .terminal .command {
+      color: #ffffff;
+    }
+    .terminal .output {
+      color: #88dd88;
+    }
+    .terminal .warn {
+      color: #ffcc44;
+    }
+    .terminal .danger {
+      color: #ff4444;
+    }
+    .terminal .info {
+      color: #44aaff;
+    }
+    .cmd-btn {
+      background: #051a08;
+      border: 1px solid #00cc44;
+      color: #00cc44;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.72rem;
+      padding: 0.4rem 0.7rem;
+      margin: 0.15rem;
+      cursor: pointer;
+      transition: 0.2s;
+      border-radius: 1.5rem;
+    }
+    .cmd-btn:hover {
+      background: #0a2a10;
+      box-shadow: 0 0 10px #00cc44;
+    }
+    .cmd-btn.active {
+      background: #0a2a10;
+      border-color: #44ff66;
+      box-shadow: 0 0 15px #00cc44;
+    }
+    .log-line {
+      background: #050a15;
+      border: 1px solid #2a3020;
+      padding: 0.5rem 1rem;
+      border-radius: 0.6rem;
+      margin: 0.4rem 0;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.78rem;
+      white-space: pre-wrap;
+      color: #b0b8c8;
+    }
+    .badge {
+      background: #2a3020;
+      padding: 0.2rem 0.9rem;
+      border-radius: 20px;
+      font-size: 0.8rem;
+    }
+    .flag-box {
+      background: #1a2000;
+      border: 2px dashed #ffd700;
+      padding: 0.9rem;
+      border-radius: 20px;
+      text-align: center;
+      font-weight: bold;
+      font-size: 1.4rem;
+      letter-spacing: 3px;
+      color: #ffd700;
+      animation: glowGold 1.7s infinite;
+    }
+    @keyframes glowGold {
+      0% { box-shadow: 0 0 5px #ffd700; }
+      50% { box-shadow: 0 0 30px #ffaa00; }
+      100% { box-shadow: 0 0 5px #ffd700; }
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 0.8rem;
+    }
+    th {
+      text-align: left;
+      color: #ccaa55;
+      border-bottom: 1px solid #4a4020;
+      padding: 0.4rem;
+    }
+    td {
+      padding: 0.4rem;
+      border-bottom: 1px solid #2a3020;
+    }
+    .status-indicator {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+    .toast {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: #1a2010;
+      border: 1px solid #ffcc44;
+      padding: 1rem 1.5rem;
+      border-radius: 2rem;
+      color: #e8dcc0;
+      font-weight: bold;
+      z-index: 9999;
+      animation: slideIn 0.3s ease, fadeOut 0.3s 2.5s forwards;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    }
+    @keyframes slideIn {
+      from { transform: translateX(100px); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes fadeOut {
+      to { opacity: 0; transform: translateY(-10px); }
+    }
+    code {
+      background: #0a1525;
+      padding: 0.2rem 0.6rem;
+      border-radius: 12px;
+      font-family: 'Fira Code', monospace;
+    }
+  </style>
+</head>
+<body>
+<div class="container" id="appContainer">
+  <!-- LOGIN SECTION -->
+  <div id="loginSection">
+    <h1>🧠 MEMORY CTF</h1>
+    <div class="subtitle">Volatility Memory Forensics · Dump Analysis · Malware Hunting</div>
+    <div class="panel">
+      <div class="flex-row" style="justify-content: center;">
+        <button id="studentLoginBtn">🎓 Student Access</button>
+        <button id="adminLoginBtn">🛡️ Admin Panel</button>
+      </div>
+      <div id="studentLoginForm" class="hidden" style="margin-top:1.6rem; text-align:center;">
+        <input type="text" id="studentNameInput" placeholder="Your full name" autocomplete="off" style="width:70%;">
+        <input type="password" id="studentPassInput" placeholder="Student batch password" style="width:70%; margin-top:0.7rem;">
+        <button id="studentSubmitLogin" style="margin-top:0.8rem;">🔐 Enter CTF</button>
+        <p style="font-size:0.8rem; color:#b0a880; margin-top:0.5rem;">Default password: <code>memory2025</code></p>
+      </div>
+      <div id="adminLoginForm" class="hidden" style="margin-top:1.6rem; text-align:center;">
+        <input type="password" id="adminPassInput" placeholder="Admin password">
+        <button id="adminSubmitLogin" style="margin-top:0.8rem;">🔑 Admin Login</button>
+        <p style="font-size:0.8rem; color:#b0a880; margin-top:0.5rem;">Default admin: <code>admin123</code></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- STUDENT DASHBOARD -->
+  <div id="studentDashboard" class="hidden">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h2 style="color:#ffcc44;">👤 <span id="displayStudentName"></span></h2>
+      <button id="logoutStudentBtn">🚪 Logout</button>
+    </div>
+    <div id="taskContainer"></div>
+  </div>
+
+  <!-- ADMIN PANEL -->
+  <div id="adminDashboard" class="hidden">
+    <div style="display:flex; justify-content:space-between;">
+      <h2 style="color:#ccaa55;">🛡️ ADMINISTRATOR</h2>
+      <button id="logoutAdminBtn">Exit</button>
+    </div>
+    <div class="panel">
+      <h3>🔐 Student Batch Password</h3>
+      <p style="font-size:0.8rem; color:#b0a880; margin-bottom:0.5rem;">Current: <code id="currentStudentPassDisplay"></code></p>
+      <div class="flex-row">
+        <input type="text" id="newStudentPassword" placeholder="New student password">
+        <button id="updateStudentPasswordBtn">Update</button>
+      </div>
+      <hr style="border-color:#4a4020; margin:1.2rem 0;">
+      <h3>🔑 Change Admin Password</h3>
+      <p style="font-size:0.8rem; color:#b0a880; margin-bottom:0.5rem;">Current: <code id="currentAdminPassDisplay"></code></p>
+      <div class="flex-row">
+        <input type="password" id="newAdminPassword" placeholder="New admin password">
+        <button id="updateAdminPasswordBtn">Update</button>
+      </div>
+      <hr style="border-color:#4a4020; margin:1.2rem 0;">
+      <h3>📋 Student Progress</h3>
+      <div id="adminStudentList"></div>
+      <button id="resetAllProgressBtn" style="background:#3a1a1a; border-color:#aa3030; margin-top:1rem;">⚠️ Reset All Student Progress</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function() {
+    // ============ STORAGE KEYS ============
+    const ADMIN_PASS_KEY = 'memory_admin_pass_v2';
+    const STUDENT_PASS_KEY = 'memory_student_pass_v2';
+    const STUDENTS_DB_KEY = 'memory_students_db_v2';
+    const INITIALIZED_KEY = 'memory_initialized_v2';
+
+    // ============ DEFAULT VALUES ============
+    const DEFAULT_ADMIN_PASS = 'admin123';
+    const DEFAULT_STUDENT_PASS = 'memory2025';
+
+    // ============ INITIALIZATION ============
+    function initializeStorage() {
+      if (!localStorage.getItem(INITIALIZED_KEY)) {
+        if (!localStorage.getItem(ADMIN_PASS_KEY)) {
+          localStorage.setItem(ADMIN_PASS_KEY, DEFAULT_ADMIN_PASS);
+        }
+        if (!localStorage.getItem(STUDENT_PASS_KEY)) {
+          localStorage.setItem(STUDENT_PASS_KEY, DEFAULT_STUDENT_PASS);
+        }
+        if (!localStorage.getItem(STUDENTS_DB_KEY)) {
+          localStorage.setItem(STUDENTS_DB_KEY, JSON.stringify([]));
+        }
+        localStorage.setItem(INITIALIZED_KEY, 'true');
+      }
+    }
+    initializeStorage();
+
+    // ============ STATE ============
+    let currentUser = null;
+    let adminActive = false;
+    let commandsRun = {};
+
+    // ============ TASKS ============
+    const tasks = [
+      { id: 1, title: "🔍 Task 1: Determine Profile", desc: "Run imageinfo. What is the suggested profile? (exact name)", answer: "Win7SP1x64", extra: "imageinfo" },
+      { id: 2, title: "👻 Task 2: Find Hidden Process", desc: "Compare pslist vs psscan. Which malicious process is hidden from pslist? (exe name)", answer: "malware.exe", extra: "pslist" },
+      { id: 3, title: "🌐 Task 3: C2 Connection", desc: "Run netscan. What is the suspicious external IP? (format: x.x.x.x)", answer: "185.130.5.253", extra: "netscan" },
+      { id: 4, title: "💉 Task 4: Code Injection", desc: "Run malfind. Which legitimate process has injected code? (exe name)", answer: "explorer.exe", extra: "malfind" },
+      { id: 5, title: "📦 Task 5: Dump & Extract Config", desc: "Dump malware.exe. What is the C2 domain in its config?", answer: "badguy.attacknet.org", extra: "dump" }
+    ];
+
+    // ============ SIMULATED COMMAND OUTPUTS ============
+    const commandOutputs = {
+      imageinfo: `
+<span class="output">Volatility Foundation Volatility Framework 2.6.1</span>
+<span class="output">Determining profile based on KDBG search...</span>
+
+<span class="output">          Suggested Profile(s) : </span><span class="info">Win7SP1x64, Win7SP0x64, Win2008R2SP0x64</span>
+<span class="output">                     AS Layer1 : WindowsAMD64PagedMemory</span>
+<span class="output">                     AS Layer2 : FileAddressSpace</span>
+<span class="output">                      PAE type : No PAE</span>
+<span class="output">                           DTB : 0x187000L</span>
+<span class="output">                          KDBG : 0xf8000280a0a0L</span>
+<span class="output">          Number of Processors : 4</span>
+<span class="output">     Image Type (Service Pack) : 1</span>
+<span class="output">                KPCR for CPU 0 : 0xfffff8000280b000L</span>
+<span class="output">                KPCR for CPU 1 : 0xfffff880009ea000L</span>
+<span class="warn">  ⚠ Best profile: Win7SP1x64</span>
+      `,
+      pslist: `
+<span class="output">Offset(V)          Name                    PID   PPID   Thds     Hnds   Sess  Wow64 Start</span>
+<span class="output">------------------ -------------------- ------ ------ ------ -------- ------ ----- ------------------</span>
+<span class="output">0xfffffa8001234567 System                    4      0    139      590 ------      0 2024-01-15 08:30:00</span>
+<span class="output">0xfffffa8002345678 smss.exe                256      4      3       35 ------      0 2024-01-15 08:30:02</span>
+<span class="output">0xfffffa8003456789 csrss.exe               344    336     10      520      0      0 2024-01-15 08:30:05</span>
+<span class="output">0xfffffa8004567890 winlogon.exe            400    336      4      120      1      0 2024-01-15 08:30:08</span>
+<span class="output">0xfffffa8005678901 services.exe            488    400     10      220      0      0 2024-01-15 08:30:10</span>
+<span class="output">0xfffffa8006789012 lsass.exe               500    400      8      780      0      0 2024-01-15 08:30:11</span>
+<span class="output">0xfffffa8007890123 svchost.exe             612    488     12      420      0      0 2024-01-15 08:30:15</span>
+<span class="output">0xfffffa8008901234 explorer.exe           1680   1652     25      850      1      0 2024-01-15 08:35:00</span>
+<span class="output">0xfffffa8009012345 cmd.exe                2240   1680      2       45      1      0 2024-01-15 09:00:00</span>
+<span class="warn">⚠ Note: Some processes may be hidden. Use psscan for complete list.</span>
+      `,
+      psscan: `
+<span class="output">Offset(V)          Name                    PID   PPID   Thds     Hnds   Sess  Wow64 Start</span>
+<span class="output">------------------ -------------------- ------ ------ ------ -------- ------ ----- ------------------</span>
+<span class="output">0xfffffa8001234567 System                    4      0    139      590 ------      0 2024-01-15 08:30:00</span>
+<span class="output">0xfffffa8002345678 smss.exe                256      4      3       35 ------      0 2024-01-15 08:30:02</span>
+<span class="output">0xfffffa8003456789 csrss.exe               344    336     10      520      0      0 2024-01-15 08:30:05</span>
+<span class="output">0xfffffa8004567890 winlogon.exe            400    336      4      120      1      0 2024-01-15 08:30:08</span>
+<span class="output">0xfffffa8005678901 services.exe            488    400     10      220      0      0 2024-01-15 08:30:10</span>
+<span class="output">0xfffffa8006789012 lsass.exe               500    400      8      780      0      0 2024-01-15 08:30:11</span>
+<span class="output">0xfffffa8007890123 svchost.exe             612    488     12      420      0      0 2024-01-15 08:30:15</span>
+<span class="output">0xfffffa8008901234 explorer.exe           1680   1652     25      850      1      0 2024-01-15 08:35:00</span>
+<span class="output">0xfffffa8009012345 cmd.exe                2240   1680      2       45      1      0 2024-01-15 09:00:00</span>
+<span class="danger">0xfffffa8009999999 malware.exe            31337   1680      4       80      1      0 2024-01-15 09:02:00 ⚠ HIDDEN (DKOM)</span>
+<span class="danger">⚠ FOUND HIDDEN PROCESS: malware.exe (PID 31337) - unlinked from ActiveProcessLinks!</span>
+      `,
+      netscan: `
+<span class="output">Offset(V)          Proto    Local Address             Foreign Address           State            Pid   Owner</span>
+<span class="output">------------------ -------- ------------------------- ------------------------- --------------- ------ --------------------</span>
+<span class="output">0xfffffa800a100001 TCPv4    192.168.1.100:49158       185.130.5.253:443         ESTABLISHED     31337 malware.exe</span>
+<span class="output">0xfffffa800a100002 TCPv4    192.168.1.100:49159       8.8.8.8:53               CLOSED          612   svchost.exe</span>
+<span class="output">0xfffffa800a100003 TCPv4    0.0.0.0:445               0.0.0.0:0                LISTENING       4     System</span>
+<span class="output">0xfffffa800a100004 TCPv4    192.168.1.100:49160       23.45.67.89:80            ESTABLISHED     1680  explorer.exe</span>
+<span class="output">0xfffffa800a100005 UDPv4    0.0.0.0:137               *:*                                     4     System</span>
+<span class="danger">⚠ Suspicious connection: PID 31337 → 185.130.5.253:443 (C2 communication)</span>
+      `,
+      malfind: `
+<span class="output">Volatility Foundation Volatility Framework 2.6.1</span>
+<span class="output">Scanning for injected code...</span>
+
+<span class="output">Process: System (PID: 4)</span>
+<span class="output">  No injected code detected.</span>
+
+<span class="output">Process: svchost.exe (PID: 612)</span>
+<span class="output">  No injected code detected.</span>
+
+<span class="danger">Process: explorer.exe (PID: 1680)</span>
+<span class="danger">  [!] INJECTED CODE FOUND at 0x400000</span>
+<span class="danger">  Protection: PAGE_EXECUTE_READWRITE</span>
+<span class="danger">  Tag: VadS (private memory)</span>
+<span class="danger">  Data: 4D 5A 90 00 03 00 00 00... (MZ header - embedded PE)</span>
+<span class="danger">  ⚠ Code injection detected in explorer.exe!</span>
+
+<span class="output">Process: malware.exe (PID: 31337)</span>
+<span class="output">  No additional injection detected.</span>
+      `,
+      dump: `
+<span class="output">$ volatility -f memory.dmp --profile=Win7SP1x64 procdump -p 31337 -D /output</span>
+<span class="output">Volatility Foundation Volatility Framework 2.6.1</span>
+<span class="output">Process(V)         ImageBase          Name                 Result</span>
+<span class="output">------------------ ------------------ -------------------- ------</span>
+<span class="output">0xfffffa8009999999 0x0000000000400000 malware.exe          OK: executable.31337.exe</span>
+<span class="output">Dumping malware.exe (PID 31337) complete.</span>
+
+<span class="output">$ strings executable.31337.exe | grep -E "(http|https|\\.com|\\.net|\\.org)"</span>
+<span class="output">-------------------------------------------------------</span>
+<span class="danger">https://badguy.attacknet.org/api/register</span>
+<span class="danger">https://badguy.attacknet.org/api/command</span>
+<span class="danger">https://badguy.attacknet.org/api/upload</span>
+<span class="output">-------------------------------------------------------</span>
+<span class="warn">⚠ C2 Domain extracted: badguy.attacknet.org</span>
+      `
+    };
+
+    // ============ HELPERS ============
+    function getStudents() {
+      try { return JSON.parse(localStorage.getItem(STUDENTS_DB_KEY) || '[]'); }
+      catch(e) { return []; }
+    }
+    
+    function saveStudents(arr) { 
+      localStorage.setItem(STUDENTS_DB_KEY, JSON.stringify(arr)); 
+    }
+    
+    function getStudentPassword() { 
+      return localStorage.getItem(STUDENT_PASS_KEY) || DEFAULT_STUDENT_PASS; 
+    }
+    
+    function getAdminPassword() { 
+      return localStorage.getItem(ADMIN_PASS_KEY) || DEFAULT_ADMIN_PASS; 
+    }
+
+    function showToast(message, isError = false) {
+      const existingToast = document.querySelector('.toast');
+      if (existingToast) existingToast.remove();
+      
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.style.background = isError ? '#3a1a1a' : '#1a2010';
+      toast.style.borderColor = isError ? '#aa3030' : '#ffcc44';
+      toast.style.color = isError ? '#ffaaaa' : '#e8dcc0';
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      
+      setTimeout(() => {
+        if (toast.parentNode) toast.remove();
+      }, 3000);
+    }
+
+    function updateCompletion(name, taskId) {
+      let students = getStudents();
+      let s = students.find(s => s.name.toLowerCase() === name.toLowerCase());
+      if (s && !s.completedTasks.includes(taskId)) {
+        s.completedTasks.push(taskId);
+        saveStudents(students);
+        if (currentUser && currentUser.name.toLowerCase() === name.toLowerCase()) {
+          currentUser.completedTasks = [...s.completedTasks];
+        }
+        return true;
+      }
+      return false;
+    }
+
+    // ============ TERMINAL ============
+    function createVolatilityTerminal() {
+      let html = '<p style="color:#ccaa55; margin-bottom:0.5rem;">💻 Volatility Terminal (click commands):</p>';
+      html += '<div style="display:flex; flex-wrap:wrap; gap:0.2rem; margin-bottom:0.5rem;">';
+      html += '<button class="cmd-btn" onclick="runVolCommand(\'imageinfo\')">imageinfo</button>';
+      html += '<button class="cmd-btn" onclick="runVolCommand(\'pslist\')">pslist</button>';
+      html += '<button class="cmd-btn" onclick="runVolCommand(\'psscan\')">psscan</button>';
+      html += '<button class="cmd-btn" onclick="runVolCommand(\'netscan\')">netscan</button>';
+      html += '<button class="cmd-btn" onclick="runVolCommand(\'malfind\')">malfind</button>';
+      html += '<button class="cmd-btn" onclick="runVolCommand(\'dump\')">procdump</button>';
+      html += '<button class="cmd-btn" onclick="runVolCommand(\'clear\')">clear</button>';
+      html += '</div>';
+      html += '<div class="terminal" id="volTerminal">';
+      html += '<div><span class="prompt">volatility> </span><span class="output">Ready. Run imageinfo first to determine profile.</span></div>';
+      html += '</div>';
+      return html;
+    }
+
+    window.runVolCommand = function(cmd) {
+      const terminal = document.getElementById('volTerminal');
+      if (!terminal) return;
+      
+      commandsRun[cmd] = true;
+      let output = terminal.innerHTML;
+      
+      // Add command
+      output += `<div><span class="prompt">volatility> </span><span class="command">${cmd === 'clear' ? '' : cmd}</span></div>`;
+      
+      if (cmd === 'clear') {
+        terminal.innerHTML = '<div><span class="prompt">volatility> </span><span class="output">Terminal cleared.</span></div>';
+        return;
+      }
+      
+      // Add output based on command
+      if (commandOutputs[cmd]) {
+        output += commandOutputs[cmd];
+      } else if (cmd === 'procdump') {
+        output += commandOutputs['dump'];
+      } else {
+        output += `<span class="danger">Unknown command: ${cmd}</span>\n`;
+        output += '<span class="output">Available: imageinfo, pslist, psscan, netscan, malfind, procdump, clear</span>';
+      }
+      
+      terminal.innerHTML = output;
+      terminal.scrollTop = terminal.scrollHeight;
+      
+      // Show toast hints
+      if (cmd === 'imageinfo') showToast('📋 Profile identified! Note the suggested profile.');
+      if (cmd === 'psscan') showToast('👻 Hidden process found! Compare with pslist output.');
+      if (cmd === 'netscan') showToast('🌐 C2 connection identified! Look at PID 31337.');
+      if (cmd === 'malfind') showToast('💉 Code injection found in legitimate process!');
+      if (cmd === 'procdump' || cmd === 'dump') showToast('📦 Malware dumped! Extract C2 domain from strings.');
+    };
+
+    // ============ RENDER ============
+    function renderTasks() {
+      if (!currentUser) return;
+      document.getElementById('displayStudentName').innerText = currentUser.name;
+      const container = document.getElementById('taskContainer');
+      const completed = currentUser.completedTasks || [];
+      
+      let html = '<h3 style="margin-bottom:1rem;">🧠 Volatility Memory Forensics Workstation</h3>';
+      
+      // Terminal
+      html += createVolatilityTerminal();
+
+      tasks.forEach(task => {
+        const done = completed.includes(task.id);
+        html += `<div class="task-card" style="border-left-color: ${done ? '#2ecc71' : '#ffcc44'}; animation-delay: ${task.id * 0.1}s;">`;
+        html += `<strong>${task.title}</strong> <span class="badge">${done ? '✅ Complete' : '🔒 Pending'}</span>`;
+        html += `<p style="margin:0.4rem 0;">${task.desc}</p>`;
+
+        if (task.extra === 'imageinfo') {
+          html += '<div class="log-line">📋 Run "imageinfo" in the terminal to determine the memory profile.</div>';
+        } else if (task.extra === 'pslist') {
+          html += '<div class="log-line">📊 Run "pslist" then "psscan" and compare outputs for hidden processes.</div>';
+        } else if (task.extra === 'netscan') {
+          html += '<div class="log-line">🌐 Run "netscan" to find active network connections and C2 IP.</div>';
+        } else if (task.extra === 'malfind') {
+          html += '<div class="log-line">💉 Run "malfind" to detect code injection in legitimate processes.</div>';
+        } else if (task.extra === 'dump') {
+          html += '<div class="log-line">📦 Run "procdump" on malware PID, then use strings to find C2 domain.</div>';
+        }
+
+        if (!done) {
+          html += `<div style="display:flex; gap:0.5rem; align-items:center; margin-top:0.5rem;">`;
+          html += `<input type="text" id="answerInput${task.id}" placeholder="Your answer" style="flex:1;">`;
+          html += `<button onclick="submitTask(${task.id})">✅ Submit</button>`;
+          html += `</div>`;
+        } else {
+          html += `<p style="color:#9effb7; font-weight:bold;">✔ Task Completed Successfully</p>`;
+        }
+        html += '</div>';
+      });
+
+      if (completed.length === tasks.length) {
+        html += '<div class="flag-box" style="animation: glowGold 1.7s infinite, fadeIn 0.5s ease;">';
+        html += '🏆 FLAG{MEMORY_FORENSICS} 🏆';
+        html += '</div>';
+        html += '<p style="text-align:center; color:#ffd700; margin-top:0.5rem;">🎉 Successfully completed memory forensics investigation!</p>';
+      }
+      
+      container.innerHTML = html;
+    }
+
+    window.submitTask = function(taskId) {
+      if (!currentUser) return;
+      const input = document.getElementById(`answerInput${taskId}`);
+      if (!input) return;
+      const ans = input.value.trim();
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) return;
+      
+      if (ans.toLowerCase() === task.answer.toLowerCase()) {
+        const wasNew = updateCompletion(currentUser.name, taskId);
+        if (wasNew) {
+          showToast('✅ Correct! Task completed successfully.');
+        } else {
+          showToast('ℹ️ Task was already completed.');
+        }
+        renderTasks();
+      } else {
+        showToast('❌ Incorrect answer. Run the appropriate Volatility command for evidence.', true);
+        input.style.animation = 'shake 0.5s ease';
+        setTimeout(() => { input.style.animation = ''; }, 500);
+      }
+    };
+
+    function renderAdminList() {
+      const students = getStudents();
+      const cont = document.getElementById('adminStudentList');
+      if (!cont) return;
+      
+      document.getElementById('currentStudentPassDisplay').textContent = getStudentPassword();
+      document.getElementById('currentAdminPassDisplay').textContent = getAdminPassword();
+      
+      if (students.length === 0) {
+        cont.innerHTML = '<p style="color:#b0a880;">📭 No students have logged in yet.</p>';
+        return;
+      }
+      
+      let html = '<table><tr><th>Student Name</th><th>Tasks Completed</th><th>Progress</th><th>Status</th></tr>';
+      students.forEach(s => {
+        const cnt = (s.completedTasks || []).length;
+        const percentage = Math.round((cnt / tasks.length) * 100);
+        const statusColor = cnt === tasks.length ? '#2ecc71' : cnt > 0 ? '#f39c12' : '#e74c3c';
+        html += `<tr>
+          <td>${escapeHtml(s.name)}</td>
+          <td>${cnt} / ${tasks.length}</td>
+          <td>
+            <div style="background:#0a1525; border-radius:10px; height:8px; width:100px; overflow:hidden;">
+              <div style="width:${percentage}%; height:100%; background:${statusColor}; transition: width 0.3s;"></div>
+            </div>
+          </td>
+          <td><span class="status-indicator" style="background:${statusColor};"></span>${cnt === tasks.length ? 'Flag Obtained' : cnt > 0 ? 'In Progress' : 'Not Started'}</td>
+        </tr>`;
+      });
+      html += '</table>';
+      cont.innerHTML = html;
+    }
+
+    function escapeHtml(t) { 
+      return String(t).replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[m]); 
+    }
+
+    // ============ VIEW SWITCHING ============
+    function showLogin() {
+      document.getElementById('loginSection').classList.remove('hidden');
+      document.getElementById('studentDashboard').classList.add('hidden');
+      document.getElementById('adminDashboard').classList.add('hidden');
+      document.getElementById('studentLoginForm').classList.add('hidden');
+      document.getElementById('adminLoginForm').classList.add('hidden');
+      currentUser = null; 
+      adminActive = false;
+    }
+
+    function showStudentDash() {
+      document.getElementById('loginSection').classList.add('hidden');
+      document.getElementById('studentDashboard').classList.remove('hidden');
+      document.getElementById('adminDashboard').classList.add('hidden');
+      commandsRun = {};
+      renderTasks();
+    }
+
+    function showAdminDash() {
+      document.getElementById('loginSection').classList.add('hidden');
+      document.getElementById('studentDashboard').classList.add('hidden');
+      document.getElementById('adminDashboard').classList.remove('hidden');
+      renderAdminList();
+    }
+
+    // ============ EVENT LISTENERS ============
+    document.addEventListener('DOMContentLoaded', ()=>{
+      document.getElementById('studentLoginBtn').addEventListener('click', ()=>{
+        document.getElementById('studentLoginForm').classList.remove('hidden');
+        document.getElementById('adminLoginForm').classList.add('hidden');
+      });
+      
+      document.getElementById('adminLoginBtn').addEventListener('click', ()=>{
+        document.getElementById('adminLoginForm').classList.remove('hidden');
+        document.getElementById('studentLoginForm').classList.add('hidden');
+      });
+
+      document.getElementById('studentSubmitLogin').addEventListener('click', ()=>{
+        const name = document.getElementById('studentNameInput').value.trim();
+        const pass = document.getElementById('studentPassInput').value.trim();
+        
+        if(!name || !pass) {
+          showToast('Please enter both name and password.', true);
+          return;
+        }
+        
+        if(pass !== getStudentPassword()) {
+          showToast('Invalid student batch password.', true);
+          return;
+        }
+        
+        let students = getStudents();
+        let stu = students.find(s => s.name.toLowerCase() === name.toLowerCase());
+        if(!stu) { 
+          stu = {name, completedTasks: []}; 
+          students.push(stu); 
+          saveStudents(students);
+          showToast(`Welcome, ${name}! New profile created.`);
+        } else {
+          showToast(`Welcome back, ${name}!`);
+        }
+        
+        currentUser = {name: stu.name, completedTasks: [...stu.completedTasks]};
+        document.getElementById('studentNameInput').value = '';
+        document.getElementById('studentPassInput').value = '';
+        showStudentDash();
+      });
+
+      document.getElementById('adminSubmitLogin').addEventListener('click', ()=>{
+        const pass = document.getElementById('adminPassInput').value.trim();
+        if(pass === getAdminPassword()){
+          adminActive = true; 
+          document.getElementById('adminPassInput').value = ''; 
+          showToast('Admin access granted.');
+          showAdminDash();
+        } else {
+          showToast('Invalid admin password.', true);
+        }
+      });
+
+      document.getElementById('logoutStudentBtn').addEventListener('click', ()=>{
+        showToast('Logged out successfully.');
+        showLogin();
+      });
+      
+      document.getElementById('logoutAdminBtn').addEventListener('click', ()=>{
+        showToast('Admin logged out.');
+        showLogin();
+      });
+
+      document.getElementById('updateStudentPasswordBtn').addEventListener('click', ()=>{
+        if (!adminActive) return;
+        const np = document.getElementById('newStudentPassword').value.trim();
+        if(!np) {
+          showToast('Please enter a new password.', true);
+          return;
+        }
+        localStorage.setItem(STUDENT_PASS_KEY, np);
+        showToast('✅ Student password updated successfully!');
+        document.getElementById('newStudentPassword').value = '';
+        renderAdminList();
+      });
+
+      document.getElementById('updateAdminPasswordBtn').addEventListener('click', ()=>{
+        if (!adminActive) return;
+        const np = document.getElementById('newAdminPassword').value.trim();
+        if(!np) {
+          showToast('Please enter a new admin password.', true);
+          return;
+        }
+        localStorage.setItem(ADMIN_PASS_KEY, np);
+        showToast('✅ Admin password changed successfully!');
+        document.getElementById('newAdminPassword').value = '';
+        renderAdminList();
+      });
+
+      document.getElementById('resetAllProgressBtn').addEventListener('click', ()=>{
+        if (!adminActive) return;
+        if (confirm('⚠️ Are you sure you want to reset ALL student progress? This cannot be undone.')) {
+          saveStudents([]);
+          showToast('All student progress has been reset.');
+          renderAdminList();
+        }
+      });
+
+      // Add shake animation
+      const style = document.createElement('style');
+      style.textContent = `
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          25% { transform: translateX(-10px); }
+          75% { transform: translateX(10px); }
+        }
+      `;
+      document.head.appendChild(style);
+
+      showLogin();
+    });
+  })();
+</script>
+</body>
+</html>
