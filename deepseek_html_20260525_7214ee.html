@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <title>CTF: Memory Forensics with Volatility | Memory Dump Analysis</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', 'Fira Code', 'Consolas', system-ui, monospace; }
+    body {
+      background: linear-gradient(160deg, #000a15 0%, #001525 50%, #000a15 100%);
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      padding: 1.5rem; margin: 0;
+    }
+    .container {
+      max-width: 1200px; width: 100%; background: rgba(5, 15, 30, 0.95);
+      backdrop-filter: blur(28px); border: 1px solid rgba(255, 200, 50, 0.4);
+      box-shadow: 0 25px 50px rgba(255, 180, 0, 0.2); border-radius: 2.5rem;
+      padding: 2rem; color: #d0d8e8;
+    }
+    h1 { font-size: 2.2rem; font-weight: 700; text-align: center; background: linear-gradient(135deg, #ffcc44, #cc8800); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0.4rem; letter-spacing: 1px; }
+    .subtitle { text-align: center; color: #b0a880; margin-bottom: 1.8rem; border-bottom: 1px dashed #4a4020; padding-bottom: 1rem; font-style: italic; }
+    .panel { background: rgba(5, 12, 25, 0.9); backdrop-filter: blur(12px); border-radius: 1.8rem; padding: 1.7rem; border: 1px solid #4a4020; margin-bottom: 1.8rem; }
+    .hidden { display: none !important; }
+    input, button { background: #0a1525; border: 1px solid #5a4a30; border-radius: 2rem; padding: 0.7rem 1.3rem; color: #e8dcc0; font-weight: 500; outline: none; font-size: 0.9rem; }
+    input:focus { border-color: #ffcc44; box-shadow: 0 0 14px #cc8800; }
+    button { background: #251a10; border-color: #aa8833; cursor: pointer; font-weight: bold; display: inline-flex; align-items: center; gap: 0.3rem; }
+    button:hover { background: #352820; border-color: #ddbb55; box-shadow: 0 0 18px #cc9900; }
+    .task-card { background: #080f1a; border-left: 6px solid #ffcc44; padding: 1.2rem; border-radius: 1.3rem; margin: 1.2rem 0; animation: fadeIn 0.35s ease; }
+    @keyframes fadeIn { 0% { opacity: 0; transform: translateY(8px); } 100% { opacity: 1; transform: translateY(0); } }
+    .terminal { background: #000510; border: 2px solid #00cc44; border-radius: 1rem; padding: 1rem; margin: 1rem 0; font-family: 'Fira Code', 'Consolas', monospace; font-size: 0.78rem; color: #00cc44; min-height: 200px; max-height: 450px; overflow-y: auto; box-shadow: 0 0 25px rgba(0, 204, 68, 0.2); }
+    .terminal .prompt { color: #00cc44; }
+    .terminal .command { color: #ffffff; }
+    .terminal .output { color: #88dd88; }
+    .terminal .warn { color: #ffcc44; }
+    .terminal .danger { color: #ff4444; }
+    .terminal .info { color: #44aaff; }
+    .cmd-btn { background: #051a08; border: 1px solid #00cc44; color: #00cc44; font-family: 'Fira Code', monospace; font-size: 0.72rem; padding: 0.4rem 0.7rem; margin: 0.15rem; cursor: pointer; border-radius: 1.5rem; }
+    .cmd-btn:hover { background: #0a2a10; box-shadow: 0 0 10px #00cc44; }
+    .log-line { background: #050a15; border: 1px solid #2a3020; padding: 0.5rem 1rem; border-radius: 0.6rem; margin: 0.4rem 0; font-family: 'Fira Code', monospace; font-size: 0.78rem; white-space: pre-wrap; color: #b0b8c8; }
+    .badge { background: #2a3020; padding: 0.2rem 0.9rem; border-radius: 20px; font-size: 0.8rem; }
+    .flag-box { background: #1a2000; border: 2px dashed #ffd700; padding: 0.9rem; border-radius: 20px; text-align: center; font-weight: bold; font-size: 1.4rem; letter-spacing: 3px; color: #ffd700; animation: glowGold 1.7s infinite; }
+    @keyframes glowGold { 0% { box-shadow: 0 0 5px #ffd700; } 50% { box-shadow: 0 0 30px #ffaa00; } 100% { box-shadow: 0 0 5px #ffd700; } }
+    .success-msg { color: #9effb7; font-weight: bold; }
+    .toast { position: fixed; top: 20px; right: 20px; background: #1a2010; border: 1px solid #ffcc44; padding: 1rem 1.5rem; border-radius: 2rem; color: #e8dcc0; font-weight: bold; z-index: 9999; animation: slideIn 0.3s ease, fadeOut 0.3s 2.5s forwards; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+    @keyframes slideIn { from { transform: translateX(100px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes fadeOut { to { opacity: 0; transform: translateY(-10px); } }
+    code { background: #0a1525; padding: 0.2rem 0.6rem; border-radius: 12px; font-family: 'Fira Code', monospace; }
+  </style>
+</head>
+<body>
+<div class="container" id="appContainer">
+
+  <div id="loginSection">
+    <h1>🧠 MEMORY CTF</h1>
+    <div class="subtitle">Volatility Memory Forensics · Dump Analysis · Malware Hunting</div>
+    <div class="panel">
+      <div style="text-align:center;">
+        <input type="text" id="studentNameInput" placeholder="Enter your name" autocomplete="off" style="width:70%;">
+        <input type="password" id="studentPassInput" placeholder="Enter password" style="width:70%; margin-top:0.7rem;">
+        <button id="studentSubmitLogin" style="margin-top:0.8rem;">🔐 Enter CTF Lab</button>
+        <p style="font-size:0.8rem; color:#b0a880; margin-top:0.5rem;">
+          Password: <code>45_2026</code>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div id="studentDashboard" class="hidden">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h2 style="color:#ffcc44;">👤 <span id="displayStudentName"></span></h2>
+      <button id="logoutStudentBtn">🚪 Logout</button>
+    </div>
+    <div id="taskContainer"></div>
+  </div>
+
+</div>
+
+<script>
+(function() {
+    const FIXED_PASSWORD = '45_2026';
+    const STORAGE_KEY = 'memory_ctf_progress';
+    
+    let currentUser = null;
+    let completedTasks = [];
+
+    function loadProgress() {
+        try { const s=localStorage.getItem(STORAGE_KEY); if(s){const d=JSON.parse(s); completedTasks=d.completed||[]; return d.name; } } catch(e) {}
+        return null;
+    }
+    function saveProgress() { if(currentUser) localStorage.setItem(STORAGE_KEY, JSON.stringify({name:currentUser.name, completed:currentUser.completedTasks})); }
+
+    const tasks = [
+      { id: 1, title: "🔍 Task 1: Determine Profile", desc: "Run imageinfo. What is the suggested profile?", answer: "Win7SP1x64", extra: "imageinfo" },
+      { id: 2, title: "👻 Task 2: Find Hidden Process", desc: "Which malicious process is hidden from pslist?", answer: "malware.exe", extra: "pslist" },
+      { id: 3, title: "🌐 Task 3: C2 Connection", desc: "What is the suspicious external IP? (x.x.x.x)", answer: "185.130.5.253", extra: "netscan" },
+      { id: 4, title: "💉 Task 4: Code Injection", desc: "Which legitimate process has injected code?", answer: "explorer.exe", extra: "malfind" },
+      { id: 5, title: "📦 Task 5: Extract C2 Domain", desc: "What is the C2 domain from malware config?", answer: "badguy.attacknet.org", extra: "dump" }
+    ];
+
+    const cmdOut = {
+      imageinfo: `<span class="output">Suggested Profile(s):</span> <span class="info">Win7SP1x64</span>`,
+      pslist: `<span class="output">System(4) smss.exe(256) csrss.exe(344) winlogon.exe(400) services.exe(488) lsass.exe(500) svchost.exe(612) explorer.exe(1680) cmd.exe(2240)</span>\n<span class="warn">⚠ Use psscan for hidden processes</span>`,
+      psscan: `<span class="output">...+</span>\n<span class="danger">malware.exe(31337) ⚠ HIDDEN (DKOM unlinked)</span>`,
+      netscan: `<span class="output">TCP 192.168.1.100:49158 →</span> <span class="danger">185.130.5.253:443</span> <span class="output">ESTABLISHED (PID 31337 malware.exe)</span>`,
+      malfind: `<span class="danger">explorer.exe(1680): INJECTED CODE at 0x400000 (MZ header - embedded PE)</span>`,
+      dump: `<span class="output">Dumped malware.exe (PID 31337)</span>\n<span class="danger">C2: badguy.attacknet.org</span>`
+    };
+
+    function showToast(m, e) {
+      const x=document.querySelector('.toast'); if(x)x.remove();
+      const t=document.createElement('div'); t.className='toast';
+      t.style.background=e?'#3a1a1a':'#1a2010'; t.style.borderColor=e?'#aa3030':'#ffcc44';
+      t.style.color=e?'#ffaaaa':'#e8dcc0'; t.textContent=m;
+      document.body.appendChild(t); setTimeout(()=>{if(t.parentNode)t.remove();},3000);
+    }
+
+    function createTerminal() {
+      let h='<p style="color:#ccaa55;">💻 Volatility Terminal:</p>';
+      h+='<div style="display:flex;flex-wrap:wrap;gap:0.2rem;margin-bottom:0.5rem;">';
+      ['imageinfo','pslist','psscan','netscan','malfind','dump','clear'].forEach(c=>{
+        h+=`<button class="cmd-btn" onclick="window.runCmd('${c}')">${c}</button>`;
+      });
+      h+='</div><div class="terminal" id="volTerminal">';
+      h+='<div><span class="prompt">volatility> </span><span class="output">Ready.</span></div></div>';
+      return h;
+    }
+
+    window.runCmd = function(cmd) {
+      const t=document.getElementById('volTerminal'); if(!t) return;
+      let o=t.innerHTML;
+      o+=`<div><span class="prompt">volatility> </span><span class="command">${cmd==='clear'?'':cmd}</span></div>`;
+      if(cmd==='clear'){t.innerHTML='<div><span class="prompt">volatility> </span><span class="output">Cleared.</span></div>';return;}
+      if(cmdOut[cmd]) o+=cmdOut[cmd];
+      else if(cmd==='dump') o+=cmdOut.dump;
+      else o+='<span class="danger">Unknown. Try: imageinfo pslist psscan netscan malfind dump clear</span>';
+      t.innerHTML=o; t.scrollTop=t.scrollHeight;
+    };
+
+    function renderTasks() {
+      if(!currentUser) return;
+      document.getElementById('displayStudentName').innerText=currentUser.name;
+      const c=document.getElementById('taskContainer'), done=currentUser.completedTasks||[];
+      let h='<h3>🧠 Volatility Memory Forensics Workstation</h3>';
+      h+=createTerminal();
+      tasks.forEach(t=>{
+        const dn=done.includes(t.id);
+        h+=`<div class="task-card" style="border-left-color:${dn?'#2ecc71':'#ffcc44'};"><strong>${t.title}</strong> <span class="badge">${dn?'✅ Done':'🔒 Pending'}</span><p>${t.desc}</p>`;
+        if(!dn) h+=`<div style="display:flex;gap:0.5rem;margin-top:0.5rem;"><input type="text" id="ai${t.id}" placeholder="Your answer" style="flex:1;"><button onclick="window.submitT(${t.id})">✅ Submit</button></div>`;
+        else h+='<p class="success-msg">✔ Completed</p>';
+        h+='</div>';
+      });
+      if(done.length===tasks.length) h+='<div class="flag-box">🏆 FLAG{MEMORY_FORENSICS} 🏆</div>';
+      c.innerHTML=h;
+    }
+
+    window.submitT = id => {
+      if(!currentUser) return;
+      const inp=document.getElementById('ai'+id); if(!inp) return;
+      const a=inp.value.trim(), t=tasks.find(x=>x.id===id); if(!t) return;
+      if(a.toLowerCase()===t.answer.toLowerCase()){
+        if(!currentUser.completedTasks.includes(id)){currentUser.completedTasks.push(id);saveProgress();}
+        showToast('✅ Correct!'); renderTasks();
+      } else { showToast('❌ Incorrect.',true); inp.style.animation='shake 0.5s ease'; setTimeout(()=>inp.style.animation='',500); }
+    };
+
+    function showLogin() { document.getElementById('loginSection').classList.remove('hidden'); document.getElementById('studentDashboard').classList.add('hidden'); currentUser=null; }
+    function showDash() { document.getElementById('loginSection').classList.add('hidden'); document.getElementById('studentDashboard').classList.remove('hidden'); renderTasks(); }
+
+    document.addEventListener('DOMContentLoaded',()=>{
+      const sn=loadProgress(); if(sn) document.getElementById('studentNameInput').value=sn;
+      document.getElementById('studentSubmitLogin').addEventListener('click',()=>{
+        const n=document.getElementById('studentNameInput').value.trim();
+        const p=document.getElementById('studentPassInput').value.trim();
+        if(!n||!p){showToast('Enter name and password.',true);return;}
+        if(p!==FIXED_PASSWORD){showToast('Invalid password. Use: 45_2026',true);return;}
+        currentUser={name:n,completedTasks:[...completedTasks]};
+        document.getElementById('studentPassInput').value=''; showDash();
+      });
+      document.getElementById('logoutStudentBtn').addEventListener('click',()=>{showToast('Logged out.');showLogin();});
+      const s=document.createElement('style'); s.textContent='@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-10px)}75%{transform:translateX(10px)}}';
+      document.head.appendChild(s); showLogin();
+    });
+})();
+</script>
+</body>
+</html>
